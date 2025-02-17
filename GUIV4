@@ -1,0 +1,439 @@
+import tkinter as tk
+from tkinter import ttk, messagebox
+import threading
+import time
+import random
+
+# --- Global Variables ---
+global_compounds = []  # Truly global list of compounds
+# ------------------------
+
+class BatteryExperimentApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Battery Additives Experiment UI")
+        # Set an initial size, but allow user to resize in both directions
+        self.root.geometry("800x600")
+        self.root.resizable(True, True)
+
+        # Dark mode colors (Apple-inspired)
+        self.bg_color = "#2C3E50"       # Dark background
+        self.fg_color = "#ECF0F1"       # Light text
+        self.button_bg = "#34495E"      # Darker button background
+        self.button_fg = "#ECF0F1"      # Button text
+        self.highlight_color = "#E74C3C"
+        
+        # Colors for hover effects
+        self.hover_color_add = "#58D68D"     # Hover for green buttons
+        self.normal_color_add = "#2ECC71"
+        self.hover_color_run = "#58D68D"
+        self.normal_color_run = "#2ECC71"
+        self.hover_color_print = "#F5B041"
+        self.normal_color_print = "#F39C12"
+        self.hover_color_blue = "#5DADE2"
+        self.normal_color_blue = "#3498DB"
+
+        # Configure root for dark mode
+        self.root.config(bg=self.bg_color)
+        
+        # --- Enhance the ttk Combobox style ---
+        self.style = ttk.Style()
+        self.style.theme_use("clam")  # Allows more consistent custom styling
+
+        # Customize the main combobox appearance
+        self.style.configure(
+            "TCombobox",
+            fieldbackground="#3B4B5C",   # Field background for read-only
+            background="#3B4B5C",        # Widget background
+            foreground=self.fg_color,
+            bordercolor="#34495E",
+            arrowcolor=self.fg_color,
+            selectforeground=self.fg_color,
+            selectbackground="#3B4B5C",
+            relief="flat",
+            padding=5
+        )
+
+        # Attempt to style the drop-down list portion
+        self.style.configure("TCombobox.PopdownFrame", background="#3B4B5C")
+        self.style.configure("TCombobox.PopdownListbox",
+            background="#3B4B5C", foreground=self.fg_color, borderwidth=0
+        )
+
+        # Outer frame that fills the entire window
+        self.main_frame = tk.Frame(self.root, bg=self.bg_color)
+        self.main_frame.pack(fill="both", expand=True)
+
+        # Create a frame that we will "place" in the center of the window
+        self.center_frame = tk.Frame(self.main_frame, bg=self.bg_color)
+        self.center_frame.place(relx=0.5, rely=0.5, anchor="center")
+
+        # --- Class Variables ---
+        self.experiment_count = 0
+        self.conductivity_value = tk.StringVar(value="0.00")
+        self.iterations = 10
+        self.compounds = global_compounds
+
+        # **NEW**: Keep a log of each experiment’s data
+        self.experiments_log = []
+
+        # We define a default list of 3 compounds for selection
+        self.default_compounds = ["Compound 1", "Compound 2", "Compound 3"]
+        # Track the selected compound
+        self.selected_default_compound = tk.StringVar(value=self.default_compounds[0])
+
+        # Title Label
+        self.title_label = tk.Label(
+            self.center_frame,
+            text="Battery Additives Experiment UI",
+            font=("Helvetica", 18, "bold"),
+            bg=self.bg_color,
+            fg=self.fg_color
+        )
+        self.title_label.pack(pady=10)
+
+        # Number of Iterations
+        self.iterations_frame = tk.Frame(self.center_frame, bg=self.bg_color)
+        self.iterations_frame.pack(pady=10)
+        self.iterations_label = tk.Label(
+            self.iterations_frame,
+            text="Number of Iterations:",
+            font=("Helvetica", 12),
+            bg=self.bg_color,
+            fg=self.fg_color
+        )
+        self.iterations_label.pack(side="left")
+        self.iterations_entry = tk.Entry(
+            self.iterations_frame,
+            font=("Helvetica", 12),
+            width=10,
+            bg="#3B4B5C",  # Slightly lighter "glass" style
+            fg=self.fg_color,
+            insertbackground=self.fg_color,
+            bd=2,
+            relief="ridge"
+        )
+        self.iterations_entry.insert(0, str(self.iterations))
+        self.iterations_entry.pack(side="left", padx=5)
+
+        # --- Default Compounds Selection ---
+        self.default_compound_frame = tk.Frame(self.center_frame, bg=self.bg_color)
+        self.default_compound_frame.pack(pady=10)
+
+        # Label + Dropdown (Combobox)
+        self.default_compound_label = tk.Label(
+            self.default_compound_frame,
+            text="Select Default Compound:",
+            font=("Helvetica", 12),
+            bg=self.bg_color,
+            fg=self.fg_color
+        )
+        self.default_compound_label.grid(row=0, column=0, padx=5, pady=5, sticky="e")
+
+        self.default_compound_menu = ttk.Combobox(
+            self.default_compound_frame,
+            textvariable=self.selected_default_compound,
+            values=self.default_compounds,
+            font=("Helvetica", 12),
+            state="readonly",  # prevent manual editing
+            width=15,
+            style="TCombobox"  # Use our custom style
+        )
+        self.default_compound_menu.grid(row=0, column=1, padx=5, pady=5)
+
+        # Entry for total concentration of the selected compound
+        self.default_conc_label = tk.Label(
+            self.default_compound_frame,
+            text="Concentration (%):",
+            font=("Helvetica", 12),
+            bg=self.bg_color,
+            fg=self.fg_color
+        )
+        self.default_conc_label.grid(row=1, column=0, padx=5, pady=5, sticky="e")
+
+        self.default_conc_entry = tk.Entry(
+            self.default_compound_frame,
+            font=("Helvetica", 12),
+            width=10,
+            bg="#3B4B5C",
+            fg=self.fg_color,
+            insertbackground=self.fg_color,
+            bd=2,
+            relief="ridge"
+        )
+        self.default_conc_entry.grid(row=1, column=1, padx=5, pady=5)
+
+        # Button to add the selected default compound
+        self.add_default_button = tk.Button(
+            self.default_compound_frame,
+            text="Add Selected Compound",
+            font=("Helvetica", 12),
+            bg=self.normal_color_blue,
+            fg="#FFFFFF",
+            bd=3,
+            relief="raised",
+            command=self.add_default_compound
+        )
+        self.add_default_button.grid(row=2, column=0, columnspan=2, pady=10)
+
+        # Hover effect for "Add Selected Compound" button
+        self.add_default_button.bind("<Enter>", lambda e: self.add_default_button.config(bg=self.hover_color_blue))
+        self.add_default_button.bind("<Leave>", lambda e: self.add_default_button.config(bg=self.normal_color_blue))
+
+        # Compounds List
+        self.compounds_list_label = tk.Label(
+            self.center_frame,
+            text="Compounds List:",
+            font=("Helvetica", 12, "bold"),
+            bg=self.bg_color,
+            fg=self.fg_color
+        )
+        self.compounds_list_label.pack(pady=5)
+
+        self.compounds_listbox = tk.Listbox(
+            self.center_frame,
+            font=("Helvetica", 12),
+            width=40,
+            height=5,
+            bg="#3B4B5C",   # "Glass" style
+            fg=self.fg_color,
+            bd=2,
+            relief="ridge"
+        )
+        self.compounds_listbox.pack(pady=5)
+
+        # Conductivity Monitor
+        self.conductivity_label = tk.Label(
+            self.center_frame,
+            text="Conductivity: (Placeholder)",
+            font=("Helvetica", 14),
+            bg=self.bg_color,
+            fg=self.fg_color
+        )
+        self.conductivity_label.pack(pady=5)
+
+        self.conductivity_value_label = tk.Label(
+            self.center_frame,
+            textvariable=self.conductivity_value,
+            font=("Helvetica", 14),
+            bg=self.bg_color,
+            fg=self.highlight_color
+        )
+        self.conductivity_value_label.pack(pady=5)
+
+        # Run Experiment Button
+        self.run_button = tk.Button(
+            self.center_frame,
+            text="Run Experiment",
+            command=self.run_experiment,
+            font=("Helvetica", 12),
+            bg=self.normal_color_add,
+            fg="#FFFFFF",
+            bd=3,
+            relief="raised"
+        )
+        self.run_button.pack(pady=10)
+
+        # Hover effect for Run button
+        self.run_button.bind("<Enter>", lambda e: self.run_button.config(bg=self.hover_color_add))
+        self.run_button.bind("<Leave>", lambda e: self.run_button.config(bg=self.normal_color_add))
+
+        # Print Parameters Button
+        self.print_button = tk.Button(
+            self.center_frame,
+            text="Print Parameters",
+            command=self.print_parameters,
+            font=("Helvetica", 12),
+            bg=self.normal_color_print,
+            fg="#FFFFFF",
+            bd=3,
+            relief="raised"
+        )
+        self.print_button.pack(pady=10)
+
+        # Hover effect for Print button
+        self.print_button.bind("<Enter>", lambda e: self.print_button.config(bg=self.hover_color_print))
+        self.print_button.bind("<Leave>", lambda e: self.print_button.config(bg=self.normal_color_print))
+
+        # **NEW**: Add "New Experiment" button to reset
+        self.new_experiment_button = tk.Button(
+            self.center_frame,
+            text="New Experiment",
+            command=self.new_experiment,
+            font=("Helvetica", 12),
+            bg="#9B59B6",
+            fg="#FFFFFF",
+            bd=3,
+            relief="raised"
+        )
+        self.new_experiment_button.pack(pady=10)
+
+        # Hover effect for New Experiment button (purple example)
+        self.new_experiment_button.bind("<Enter>", lambda e: self.new_experiment_button.config(bg="#BB8FCE"))
+        self.new_experiment_button.bind("<Leave>", lambda e: self.new_experiment_button.config(bg="#9B59B6"))
+
+        # Start Real-Time Conductivity Updates
+        self.running = True
+        threading.Thread(target=self.update_conductivity, daemon=True).start()
+
+        # Fade in the window from 0% to 100% opacity
+        self.root.attributes("-alpha", 0.0)
+        self.root.after(50, lambda: self.fade_in_step(0.0))
+
+        # Handle window close
+        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+
+    # --- Fade-In Animation for the Entire Window ---
+    def fade_in_step(self, alpha):
+        if alpha < 1.0:
+            alpha += 0.05
+            self.root.attributes("-alpha", alpha)
+            self.root.after(50, lambda: self.fade_in_step(alpha))
+        else:
+            self.root.attributes("-alpha", 1.0)
+
+    # --- Smooth Conductivity Animation ---
+    def update_conductivity(self):
+        while self.running:
+            target_value = random.uniform(0, 100)
+            self.smooth_conductivity_change(target_value)
+            time.sleep(1)
+
+    def smooth_conductivity_change(self, target):
+        """Gradually move from current conductivity to target."""
+        try:
+            current_val = float(self.conductivity_value.get())
+        except ValueError:
+            current_val = 0.0
+
+        steps = 15  # Number of small increments
+        step_size = (target - current_val) / steps
+
+        for _ in range(steps):
+            if not self.running:
+                return
+            current_val += step_size
+            self.conductivity_value.set(f"{current_val:.2f}")
+            # Force UI update so we see each step
+            self.root.update()
+            time.sleep(0.03)
+
+        # Ensure final value is exact
+        self.conductivity_value.set(f"{target:.2f}")
+
+    # --- Add the Selected Default Compound ---
+    def add_default_compound(self):
+        """Adds the chosen default compound from the dropdown, using the user-specified concentration."""
+        name = self.selected_default_compound.get()
+        conc_str = self.default_conc_entry.get().strip()
+        if not conc_str:
+            messagebox.showerror("Invalid Input", "Please enter a concentration for the default compound.")
+            return
+        try:
+            conc = float(conc_str)
+            if conc < 0:
+                raise ValueError
+            self.compounds.append({'name': name, 'concentration': conc})
+            self.update_compounds_listbox()
+            self.default_conc_entry.delete(0, tk.END)
+        except ValueError:
+            messagebox.showerror("Invalid Input", "Please enter a valid (non-negative) concentration.")
+
+    def update_compounds_listbox(self):
+        self.compounds_listbox.delete(0, tk.END)
+        for compound in self.compounds:
+            self.compounds_listbox.insert(tk.END, f"{compound['name']}: {compound['concentration']:.2f}%")
+
+    def run_experiment(self):
+        # Increment experiment count
+        self.experiment_count += 1
+
+        # Get number of iterations
+        try:
+            self.iterations = int(self.iterations_entry.get())
+            if self.iterations < 1:
+                raise ValueError
+        except ValueError:
+            messagebox.showerror("Invalid Input", "Please ensure iterations is a valid positive integer.")
+            return
+
+        if not self.compounds:
+            messagebox.showerror("No Compounds", "Please add at least one compound before running the experiment.")
+            return
+
+        # Estimate time left as an example (2s per iteration)
+        time_left_estimate = self.iterations * 2
+
+        # Store the data for this experiment in our log
+        exp_data = {
+            "experiment_number": self.experiment_count,
+            "iterations": self.iterations,
+            # Make a copy of current compounds so each experiment's set is frozen in time
+            "compounds": [dict(c) for c in self.compounds],
+            "time_left": time_left_estimate
+        }
+        self.experiments_log.append(exp_data)
+
+        # Print details for this experiment
+        print(f"--- Running Experiment #{self.experiment_count} ---")
+        print(f"Number of Iterations: {self.iterations}")
+        print("Compounds for this Experiment:")
+        for c in exp_data["compounds"]:
+            print(f"  - {c['name']}: {c['concentration']:.2f}%")
+        print(f"Time left to be done: ~{exp_data['time_left']} seconds.")
+        print("-----------------------------------")
+
+        # Also show a summary of ALL experiments so far
+        print("===== All Experiments So Far =====")
+        for e in self.experiments_log:
+            print(f"Experiment #{e['experiment_number']}, Iterations: {e['iterations']}, Time Left: ~{e['time_left']}s")
+            print("Compounds:")
+            for comp in e["compounds"]:
+                print(f"  - {comp['name']}: {comp['concentration']:.2f}%")
+            print("---------------")
+
+        messagebox.showinfo(
+            "Experiment Started",
+            f"Experiment #{self.experiment_count} is now running.\n"
+            f"Details printed in the terminal.\n"
+            f"Estimated Time Left: ~{time_left_estimate} seconds."
+        )
+
+    def print_parameters(self):
+        # Just print out the entire global compounds list & iterations
+        print("Current Experiment Parameters:")
+        print(f"Iterations: {self.iterations}")
+        print("Compounds:")
+        for c in self.compounds:
+            print(f"  - {c['name']}: {c['concentration']:.2f}%")
+
+    # --- NEW: Clear everything for a fresh experiment ---
+    def new_experiment(self):
+        """Clears the compounds list, resets the listbox, and resets default fields."""
+        self.compounds.clear()  # or self.compounds = []
+        self.update_compounds_listbox()
+
+        # Reset iteration count to 10 (or your preferred default)
+        self.iterations_entry.delete(0, tk.END)
+        self.iterations_entry.insert(0, "10")
+
+        # Reset the combobox to "Compound 1"
+        self.selected_default_compound.set(self.default_compounds[0])
+
+        # Clear the default concentration entry
+        self.default_conc_entry.delete(0, tk.END)
+
+        messagebox.showinfo(
+            "New Experiment",
+            "All compounds have been cleared. You may now set up a new experiment."
+        )
+
+    def on_closing(self):
+        self.running = False
+        self.root.destroy()
+
+# --- Main App Entry Point ---
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = BatteryExperimentApp(root)
+    root.mainloop()
